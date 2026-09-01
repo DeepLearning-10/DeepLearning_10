@@ -22,10 +22,9 @@
 import numpy as np
 import pandas as pd
 
-원본 = pd.read_csv("로그배치1.csv", encoding="utf-8-sig")
-지표 = ["CPU온도", "전력", "응답시간", "메모리"]
-키열 = ["수집시각", "구역", "센서ID"]
-
+original = pd.read_csv("로그배치1.csv", encoding="utf-8-sig")
+jipyo = ["CPU온도", "전력", "응답시간", "메모리"]
+keys = ["수집시각", "구역", "센서ID"]
 
 # ----------------------------------------
 # 문제 1. 중복도, 이상값도, 기준을 바꾸면 다시 나온다
@@ -56,8 +55,42 @@ import pandas as pd
 #            147  2026-08-26 09:00  Z1-알파  SN-A-02   73.0
 #            59   2026-08-25 03:00  Z3-찰리  SN-C-04   62.5
 #            {'Z1-알파': 59.08, 'Z2-브라보': 67.83, 'Z3-찰리': 77.74}
+original["전력"] = pd.to_numeric(
+    original["전력"], errors="coerce"
+)  # 전력 열을 숫자로 변환
 
+original = original.drop_duplicates()  # 중복된 행 제거 186 -> 182
+print(original.duplicated(subset=keys).sum())  # keys에서 중복된 행의 값 2개
 
+same_rows = original.loc[original.duplicated(subset=keys, keep=False), keys]
+same_rows2 = original.loc[
+    original.duplicated(subset=keys, keep=False), ["CPU온도", "메모리"]
+]
+
+same_combined = pd.concat(
+    [same_rows, same_rows2], axis=1
+)  # 수집시각 구역 센서 ID CPU온도 메모리로 합침
+original = original.drop_duplicates(
+    subset=keys, keep="first"
+)  # 중복된 값이 나오면 삭제
+print(original.shape)
+
+space_rows = original["구역"].value_counts().to_dict()
+print(space_rows)
+
+# cpu 온도 z 점수를 전체 기준
+cpu_temp = original["CPU온도"]
+z_cpu = (cpu_temp - cpu_temp.mean()) / cpu_temp.std(ddof=0)  # z-score 구하기 (표 전체)
+
+cpu_temps = original.groupby("구역")["CPU온도"]
+z_cpu_space = (cpu_temp - cpu_temps.transform("mean")) / cpu_temps.transform(
+    lambda x: x.std(ddof=0)
+)  # z-score (같은 공간)
+
+print((z_cpu.abs() > 2.5).sum(), (z_cpu_space.abs() > 2.5).sum())  # 임계값 2.5 이상
+print(original.loc[z_cpu_space.abs() > 2.5, keys + ["CPU온도"]].sort_values("구역"))
+
+print(round(cpu_temps.mean(), 2).to_dict())
 # ----------------------------------------
 # 문제 2. 고치는 데도 순서가 있다
 # ----------------------------------------
@@ -98,8 +131,101 @@ import pandas as pd
 #            3차: 0건
 #            {'Z1-알파': 60, 'Z2-브라보': 60, 'Z3-찰리': 60}
 #            (180, 9)
+normal_mask = z_cpu_space.abs() <= 2.5  # 같은 공간 z-score
+mean_include = cpu_temps.mean()  # original.groupby("구역")["CPU온도"]
+mean_exclude = (
+    original.loc[normal_mask].groupby("구역")["CPU온도"].mean()
+)  # z-score 적용하여 이상치 제외
 
+result = pd.concat(
+    [
+        mean_include.rename("포함"),
+        mean_exclude.rename("제외"),
+    ],
+    axis=1,
+)
+result["차이"] = result["포함"] - result["제외"]
 
+print(result.round(3))
+
+original["CPU온도"] = original["CPU온도"].fillna(original["구역"].map(mean_exclude))
+original["메모리"] = original["메모리"].fillna(
+    original.groupby("구역")["메모리"].transform("median")
+)
+original["전력"] = original["전력"].fillna(
+    original.groupby("구역")["전력"].transform("median")
+)
+print(original.isna().sum().sum())  # 결측치 개수
+
+print(original.groupby("구역")["CPU온도"].mean().round(2).to_dict())
+
+# 처리 전 Z3-찰리 표준편차
+print(
+    "Z3-찰리 메모리 표준편차:",
+    round(original.groupby("구역")["메모리"].std(ddof=0)["Z3-찰리"], 2),
+)
+
+count = 0
+
+while True:
+    count += 1
+
+    # 현재 데이터 기준으로 구역별 Z-score 재계산
+    memory_group = original.groupby("구역")["메모리"]
+
+    z_memory = (
+        original["메모리"] - memory_group.transform("mean")
+    ) / memory_group.transform(lambda x: x.std(ddof=0))
+
+    outlier_mask = z_memory.abs() > 3
+    outliers = original.loc[outlier_mask, ["구역", "메모리"]]
+
+    print(f"{count}차: {len(outliers)}건")
+
+    # 이상값이 없으면 반복 종료
+    if len(outliers) == 0:
+        break
+
+    print(outliers)
+
+    # 현재 구역별 중앙값으로 이상값 교체
+    memory_median = memory_group.median()
+
+    original.loc[outlier_mask, "메모리"] = original.loc[outlier_mask, "구역"].map(
+        memory_median
+    )
+
+    # 교체 후 Z3-찰리 표준편차 확인
+    print(
+        "Z3-찰리 메모리 표준편차:",
+        round(original.groupby("구역")["메모리"].std(ddof=0)["Z3-찰리"], 2),
+    )
+
+# (3) 구역별 행 수를 출력하고, 구역코드 열(Z1-알파 0, Z2-브라보 1, Z3-찰리 2)을 셋째
+#     열로 추가해 정제결과_최종.csv 로 저장하세요 (9열, 인덱스 없이, 한글 안
+#     깨지게). 다시 읽어 표 크기를 출력하세요.
+print(original.groupby("구역").size().to_dict())
+
+zone_code = {
+    "Z1-알파": 0,
+    "Z2-브라보": 1,
+    "Z3-찰리": 2,
+}
+
+original["구역코드"] = original["구역"].map(zone_code)
+
+cols = original.columns.tolist()
+cols.remove("구역코드")
+cols.insert(2, "구역코드")
+
+original = original[cols]
+
+# CSV 저장: 한글 깨짐 방지
+original.to_csv("정제결과_최종.csv", index=False, encoding="utf-8-sig")
+
+# 다시 읽어서 크기 확인
+check = pd.read_csv("정제결과_최종.csv", encoding="utf-8-sig")
+print(check.shape)
 # ----------------------------------------
 # 문제 3. 스케일 기준은 학습에서만 잡고, 저장해서 다시 쓴다
 # ----------------------------------------
@@ -115,7 +241,60 @@ import pandas as pd
 #     구역별 CPU온도 변환값의 최소·최대, 구역코드가 안 붙는 행 수를 출력하세요.
 #     배치1에 있던 구역만 남겨 다시 변환해 0~1 밖 개수와 열별 최소·최대를
 #     출력하고, 한 번 더 변환해 결과가 같은지 True/False 로 출력하세요.
-#
+df = pd.read_csv("정제결과_최종.csv")
+
+# 재현 가능하도록 섞기
+shuffled = df.sample(frac=1, random_state=6).reset_index(drop=True)
+
+n = len(shuffled)
+
+train_end = int(n * 0.6)
+val_end = int(n * 0.8)
+
+train = shuffled.iloc[:train_end]
+val = shuffled.iloc[train_end:val_end]
+test = shuffled.iloc[val_end:]
+
+print(train.shape[0], test.shape[0], val.shape[0])
+train_max = train.loc[:, jipyo].max()
+train_min = train.loc[:, jipyo].min()
+all_max = df.loc[:, jipyo].max()
+all_min = df.loc[:, jipyo].min()
+
+result = pd.DataFrame(
+    {
+        "학습 min": train_min,
+        "학습 max": train_max,
+        "전체 min": all_min,
+        "전체 max": all_max,
+    }
+)
+
+result.to_csv("스케일링기준.csv", encoding="utf-8-sig")
+
+test_scaled_all = (test[jipyo] - all_min) / (all_max - all_min)
+test_scaled_train = (test[jipyo] - train_min) / (train_max - train_min)
+
+outside_all = (
+    ((test_scaled_all < 0) | (test_scaled_all > 1)).sum().sum()
+)  # 전체 0과 1을 벗어난 범위
+
+outside_train = (
+    ((test_scaled_train < 0) | (test_scaled_train > 1)).sum().sum()
+)  # 훈련 0과 1을 벗어난 범위
+
+print(outside_all, outside_train)
+
+edge_all = ((test_scaled_all == 0) | (test_scaled_all == 1)).sum().sum()
+
+edge_train = ((test_scaled_train == 0) | (test_scaled_train == 1)).sum().sum()
+
+print(edge_all, edge_train)
+
+print(round(test_scaled_train.max(), 4).to_dict())
+
+reference = pd.read_csv("스케일링기준.csv", index_col=0, encoding="utf-8-sig")
+print(reference)
 # 기대 출력: 108 36 36
 #                    학습min   학습max   전체min   전체max
 #            CPU온도   56.03   79.55   56.03   79.71
