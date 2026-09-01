@@ -11,10 +11,15 @@
 # 필요한 파일: 로그배치1.csv (같은 폴더에 두세요)
 #   수집시각 / 구역(Z1-알파·Z2-브라보·Z3-찰리) / 센서ID / CPU온도 / 전력 / 응답시간 / 메모리 / 상태
 
+from pathlib import Path
 import numpy as np
 import pandas as pd
+import csv
 
-df = pd.read_csv("로그배치1.csv", encoding="utf-8-sig")
+BASE = Path(__file__).parent
+csv_path = BASE / "로그배치1.csv"
+
+df = pd.read_csv(csv_path, encoding="utf-8-sig")
 지표 = ["CPU온도", "전력", "응답시간", "메모리"]
 
 
@@ -31,6 +36,12 @@ df = pd.read_csv("로그배치1.csv", encoding="utf-8-sig")
 #            str
 #            {'정상': 125, '경고': 56, '장애': 5}
 
+# print("실습 데이터 준비 완료:", csv_path.name)
+# print(df.shape)
+miss = df.isnull().sum()  # isnull이 결측치(Null/Nan,None) True로 반환 sum으로 합산
+# print(miss[miss > 0].to_dict())  # 앞에 키, 뒤에 밸류
+# print(df["전력"].dtypes)
+# print(df["상태"].value_counts().to_dict())  # 특정 열의 값과 개수 가져오기(내림차순)
 
 # ----------------------------------------
 # 문제 2. 숫자로 저장되지 않은 열 고치기
@@ -41,7 +52,9 @@ df = pd.read_csv("로그배치1.csv", encoding="utf-8-sig")
 #       오류 대신 결측으로 만들어 주는 옵션이 있습니다. 그 옵션을 찾아보세요.
 # 기대 출력: 3
 #            164.42
-
+df["전력"] = pd.to_numeric(df["전력"], errors="coerce")
+# print(df["전력"].isnull().sum())
+# print(round(df["전력"].mean(), 2))
 
 # ----------------------------------------
 # 문제 3. 중복 행 제거
@@ -53,6 +66,9 @@ df = pd.read_csv("로그배치1.csv", encoding="utf-8-sig")
 # 기대 출력: 4
 #            (182, 8)
 
+# print(df.duplicated().sum())
+df = df.drop_duplicates()  # 중복행 제거하기
+# print(df.shape)
 
 # ----------------------------------------
 # 문제 4. 결측 채우기
@@ -66,6 +82,11 @@ df = pd.read_csv("로그배치1.csv", encoding="utf-8-sig")
 # 기대 출력: 0
 #            68.38 29.78
 
+df["CPU온도"] = df["CPU온도"].fillna(df["CPU온도"].mean())
+df["메모리"] = df["메모리"].fillna(df["메모리"].median())
+df["전력"] = df["전력"].fillna(df["전력"].mean())
+print(df[지표].isnull().sum().sum())
+print(round(df["CPU온도"].mean(), 2), round(df["메모리"].median(), 2))
 
 # ----------------------------------------
 # 문제 5. 구역별 요약
@@ -81,6 +102,9 @@ df = pd.read_csv("로그배치1.csv", encoding="utf-8-sig")
 #            Z3-찰리   77.59  208.04  195.30  41.11
 #            {'Z1-알파': 60, 'Z2-브라보': 62, 'Z3-찰리': 60}
 
+a = df.groupby("구역")[지표].mean()
+# print(round(a, 2))
+
 
 # ----------------------------------------
 # 문제 6. z-점수로 CPU온도 이상 찾기
@@ -91,7 +115,9 @@ df = pd.read_csv("로그배치1.csv", encoding="utf-8-sig")
 #       조건을 만족하는 개수는 True/False 시리즈의 합으로 셀 수 있습니다.
 # 기대 출력: 68.38 7.86
 #            0 0
-
+# print(round(df["CPU온도"].mean(), 2), round(df["CPU온도"].std(ddof=0), 2))
+z = (df["CPU온도"] - df["CPU온도"].mean()) / df["CPU온도"].std(ddof=0)
+# print(int(z[np.abs(z) > 3].sum()), int(z[np.abs(z) > 2].sum()))
 
 # ----------------------------------------
 # 문제 7. IQR로 메모리 이상 찾기
@@ -105,18 +131,33 @@ df = pd.read_csv("로그배치1.csv", encoding="utf-8-sig")
 #            3
 #            {'Z3-찰리': 3}
 
+q1 = np.percentile(df["메모리"], 25)
+q3 = np.percentile(df["메모리"], 75)
+iqr = q3 - q1
+low, high = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+# print(round(low, 2), round(high, 2))
+mask = (df["메모리"] < low) | (df["메모리"] > high)
+# print(mask.sum())
+dk = df[mask]
+# print(dk["구역"].value_counts().to_dict())
+
 
 # ----------------------------------------
 # 문제 8. 이상으로 판정된 행 제거
 # ----------------------------------------
 # 문제 7에서 걸린 행을 표에서 제거하세요.
-# 제거 전 구역별 행 수, 제거 후 구역별 행 수, 그리고 최종 표 크기를 차례로 출력하세요.
+# 제거 전 구역별 행 수, 제거 후 구역별 행 수,
+# 그리고 최종 표 크기를 차례로 출력하세요.
 # 인덱스는 다시 매깁니다.
 # 힌트: 골라낸 행들의 인덱스를 넘겨 행을 지우는 메서드가 있습니다.
 #       문제 3에서 쓴 인덱스 재정렬을 여기서도 잊지 마세요.
 # 기대 출력: {'Z1-알파': 60, 'Z2-브라보': 62, 'Z3-찰리': 60}
 #            {'Z1-알파': 60, 'Z2-브라보': 62, 'Z3-찰리': 57}
 #            (179, 8)
+
+# print(df.groupby("구역").size().to_dict())
+df = df.drop(df[mask].index)
+# print(df.groupby("구역").size().to_dict())
 
 
 # ----------------------------------------
@@ -136,6 +177,23 @@ df = pd.read_csv("로그배치1.csv", encoding="utf-8-sig")
 #            {'CPU온도': 0.515, '전력': 0.493, '응답시간': 0.49, '메모리': 0.414}
 #            (179, 6)
 
+df_normalized = round(
+    (df[지표] - df[지표].min()) / (df[지표].max() - df[지표].min()), 4
+)
+a = df_normalized.min(axis=0)
+b = df_normalized.max(axis=0)
+c = round(df_normalized.mean(axis=0), 3)
+# print(a.to_dict())
+# print(b.to_dict())
+# print(c.to_dict())
+df_new = pd.concat([df[["수집시각", "구역"]], df_normalized], axis=1)
+
+
+df_new.to_csv("정규화_멘티.csv", index=False, encoding="utf-8-sig")
+df_read = pd.read_csv("정규화_멘티.csv", encoding="utf-8-sig")
+
+# print(df_new.shape)
+
 
 # ----------------------------------------
 # 문제 10. 구역 인코딩하고 저장하기
@@ -149,4 +207,26 @@ df = pd.read_csv("로그배치1.csv", encoding="utf-8-sig")
 # 힌트: 딕셔너리를 주면 값을 짝지어 바꿔 주는 메서드가 있습니다.
 #       열 이름 목록을 대괄호에 넣으면 그 순서대로 열을 골라낼 수 있습니다.
 # 기대 출력: (179, 8) 0 0
-#            ['수집시각', '구역', '구역코드', 'CPU온도', '전력', '응답시간', '메모리', '상태']
+# ['수집시각', '구역', '구역코드', 'CPU온도', '전력', '응답시간', '메모리', '상태']
+
+# df["구역코드"] = df["구역"].replace({"Z1-알파": 0, "Z2-브라보": 1, "Z3-찰리": 2})
+# print(df["구역코드"])
+
+# columns = df[
+#     [
+#         "수집시각",
+#         "구역",
+#         "구역코드",
+#         "CPU온도",
+#         "전력",
+#         "응답시간",
+#         "메모리",
+#         "상태",
+#     ]
+# ]
+
+# columns.to_csv("정제결과_멘티.csv", index=False, encoding="utf-8-sig")
+# df_read = pd.read_csv("정제결과_멘티.csv", encoding="utf-8-sig")
+
+# print(df_read.shape, df_read.isnull().sum().sum(), df_read.duplicated().sum())
+# print(df_read.columns.tolist())
