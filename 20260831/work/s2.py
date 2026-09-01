@@ -42,16 +42,17 @@ BASE = Path(__file__).parent
 #
 # [멘티에게 한 문장으로]
 #   "○○라인만 △행이 사라졌는데, 그 이유는 ..."
+print("\n1번 문제. ")
 print(len(원본))  # 원본 행 수
 drop_dup = 원본.drop_duplicates()
 print(len(drop_dup))  # 원본에서 완전 중복만 제거 행 수
 print(len(멘티))  # 멘티 결과 행 수
 
-product_line = 멘티["생산라인"].value_counts().sort_index().to_dict()
-print(product_line)  # 생산라인별 행 수
-
 product_drop = drop_dup["생산라인"].value_counts().sort_index().to_dict()
 print(product_drop)
+
+product_line = 멘티["생산라인"].value_counts().sort_index().to_dict()
+print(product_line)  # 생산라인별 행 수
 
 original_mean = 원본.groupby("생산라인")["온도"].mean()
 mentee_mean = 멘티.groupby("생산라인")["온도"].mean()
@@ -63,6 +64,7 @@ compare = pd.DataFrame(
 )
 compare["차이"] = compare["원본"] - compare["멘티"]
 
+# 생산라인별 온도 평균 (원본 / 멘티/ 차이)
 print(compare)
 # [멘티에게 한 문장으로]
 # C라인에서만 3행이 줄어들었다. 그 이유는 C라인이 모두 IQR 이상치로 판정되었기 때문이다.
@@ -83,24 +85,26 @@ print(compare)
 #
 # [멘티에게 한 문장으로]
 #   "값이 0.03 다르면 컴퓨터는 다른 행으로 보지만, 현실에서는 ..."
-keys = ["검사일시", "생산라인", "라인코드"]
+# 원본 진동은 문자열이 섞여 있을 수 있으므로 숫자 변환
+drop_dup["진동"] = pd.to_numeric(drop_dup["진동"], errors="coerce")
 
-dup_mask = 멘티.duplicated(
-    subset=keys, keep=False
-)  # 중복된 기록 중 앞 뒤 행을 모두 True로 표시
+keys = ["검사일시", "생산라인", "설비번호"]
 
-# 중복으로 의심되는 행들만 따로 저장
-dup_rows = 멘티.loc[
+dup_mask = drop_dup.duplicated(subset=keys, keep=False)
+
+dup_rows = drop_dup.loc[
     dup_mask,
-    ["검사일시", "생산라인", "라인코드", "온도", "압력"],
+    ["검사일시", "생산라인", "설비번호", "온도", "압력"],
 ].sort_values(keys)
 
-# 중복된 '기록 묶음' 수
-pair_count = dup_rows.groupby(keys).ngroups
-
-print(f"같은 설비 측정 기록: {pair_count}쌍")
-print("\n[중복 의심 행]")
+print("\n2번 문제.")
+print(f"같은 설비 측정 기록: {dup_rows.groupby(keys).ngroups}쌍")
 print(dup_rows)
+
+작업본 = drop_dup.drop_duplicates(subset=keys, keep="first").reset_index(drop=True)
+
+print(작업본.shape)
+print(작업본["생산라인"].value_counts().sort_index().to_dict())
 
 # 값이 0.03 다르면 컴퓨터는 다른 행으로 보지만, 현실에서는 같은 시각에 같은
 # 설비를 중복 측정한 기록일 수 있으므로 식별 정보 기준으로 중복을 확인
@@ -120,8 +124,8 @@ print(dup_rows)
 #
 # [멘티에게 한 문장으로]
 #   "온도 73.5도는 A라인이면 정상이지만 C라인에서는 ..."
-temp = 멘티["온도"]
-group_temp = 멘티.groupby("생산라인")["온도"]
+temp = 작업본["온도"]
+group_temp = 작업본.groupby("생산라인")["온도"]
 
 # (가) 표 전체 기준 z-score
 z = (temp - temp.mean()) / temp.std(ddof=0)
@@ -136,21 +140,23 @@ mask_all = z.abs() > 2.5
 mask_line = z_2.abs() > 2.5
 
 # 이상치 개수
+print("\n3번 문제.")
 print(f"(가): {mask_all.sum()}건")
 print(f"(나): {mask_line.sum()}건")
 
-stand_생산라인 = 멘티.loc[
+stand_생산라인 = 작업본.loc[
     mask_line,
-    ["검사일시", "생산라인", "라인코드", "온도"],
+    ["검사일시", "생산라인", "설비번호", "온도"],
 ].sort_values("생산라인")
 
+print("3번 문제.")
 # (나)에서 걸린 행 출력: 라인 순 정렬
 print("\n[생산라인 기준 이상 온도]")
 print(stand_생산라인)
 
 # 라인별 온도 평균 출력
 print("\n[라인별 온도 평균]")
-print(멘티.groupby("생산라인")["온도"].mean().round(2))
+print(작업본.groupby("생산라인")["온도"].mean().round(2))
 
 # 온도 73.5도는 A라인이면 정상 범위일 수 있지만, C라인에서는 평균보다 크게 낮아 비정상으로 판단
 
@@ -175,9 +181,9 @@ print(멘티.groupby("생산라인")["온도"].mean().round(2))
 #
 # [멘티에게 한 문장으로]
 #   "결측을 채우기 전에 이상값부터 봐야 하는 이유는 ..."
-mean_include = 멘티.groupby("생산라인")["온도"].mean().round(2)  # 이상값 포함 평균
+mean_include = 작업본.groupby("생산라인")["온도"].mean().round(2)  # 이상값 포함 평균
 mean_exclude = (
-    멘티.loc[~mask_line].groupby("생산라인")["온도"].mean().round(2)
+    작업본.loc[~mask_line].groupby("생산라인")["온도"].mean().round(2)
 )  # 이상값 제외 평균
 
 compare_mean = pd.DataFrame(
@@ -189,19 +195,20 @@ compare_mean = pd.DataFrame(
 
 compare_mean["차이"] = compare_mean["이상값 포함"] - compare_mean["이상값 제외"]
 
+print("4번 문제.")
 print(compare_mean)  # 세 개짜리 표로 완성
 
-멘티["온도"] = 멘티["온도"].fillna(멘티["생산라인"].map(mean_exclude))
-멘티["압력"] = 멘티["압력"].fillna(
-    멘티["생산라인"].map(멘티.loc[~mask_line].groupby("생산라인")["압력"].median())
+작업본["온도"] = 작업본["온도"].fillna(작업본["생산라인"].map(mean_exclude))
+작업본["압력"] = 작업본["압력"].fillna(
+    작업본["생산라인"].map(작업본.loc[~mask_line].groupby("생산라인")["압력"].median())
 )
-멘티["진동"] = 멘티["진동"].fillna(
-    멘티["생산라인"].map(멘티.loc[~mask_line].groupby("생산라인")["진동"].median())
+작업본["진동"] = 작업본["진동"].fillna(
+    작업본["생산라인"].map(작업본.loc[~mask_line].groupby("생산라인")["진동"].median())
 )
 
-print(멘티.isna().sum().sum())  # 결측 총 개수
+print(작업본.isna().sum().sum())  # 결측 총 개수
 print(mean_exclude)
-print(round(멘티.groupby("생산라인")["온도"].mean(), 2))
+print(round(작업본.groupby("생산라인")["온도"].mean(), 2))
 
 # 이상값을 먼저 확인하지 않으면, 결측을 채우는데 사용하는 평균이나 중앙값 자체가 왜곡될 수 있다.
 
@@ -223,32 +230,28 @@ print(round(멘티.groupby("생산라인")["온도"].mean(), 2))
 #
 # [멘티에게 한 문장으로]
 #   "큰 이상값 하나가 표준편차를 부풀려서 작은 이상값을 ..."
-group_press = 멘티.groupby("생산라인")["압력"]
-z_press = (멘티["압력"] - group_press.transform("mean")) / group_press.transform(
-    lambda x: x.std(ddof=0)
-)
-c_mask = (멘티["생산라인"] == "C라인") & (z_press > 3)
+print("\n5번 문제")
+for step in range(1, 4):
+    group_press = 작업본.groupby("생산라인")["압력"]
 
-print("문제 5.")
-# 1차 탐지
-print(group_press.std(ddof=0).loc["C라인"])  # c라인 압력의 표준편차
-print(c_mask.sum())  # z-점수에 걸린 개수
-print(멘티.loc[c_mask, "압력"])
-멘티.loc[c_mask, "압력"] = group_press.median().loc["C라인"]
-print(group_press.std(ddof=0).loc["C라인"])
-print(멘티.loc[c_mask, ["검사일시", "생산라인", "라인코드", "압력"]])
+    z_press = (작업본["압력"] - group_press.transform("mean")) / group_press.transform(
+        lambda x: x.std(ddof=0)
+    )
 
-# 2차 탐지
-group_press = 멘티.groupby("생산라인")["압력"]
-z_press = (멘티["압력"] - group_press.transform("mean")) / group_press.transform(
-    lambda x: x.std(ddof=0)
-)
-c_mask = (멘티["생산라인"] == "C라인") & (z_press > 3)
+    c_mask = (작업본["생산라인"] == "C라인") & (z_press > 3)
 
-# 2차 결과 출력
-print("\n[2차 탐지]")
-print(c_mask.sum())
-print(멘티.loc[c_mask, ["생산라인", "압력"]])
+    print(f"\n[{step}차 탐지]")
+    print("C라인 표준편차:", group_press.std(ddof=0).loc["C라인"])
+    print("이상값 개수:", c_mask.sum())
+    print(작업본.loc[c_mask, ["생산라인", "압력"]])
+
+    if c_mask.sum() == 0:
+        break
+
+    line_median = group_press.transform("median")
+    작업본.loc[c_mask, "압력"] = line_median[c_mask]
+
+print(작업본["생산라인"].value_counts().sort_index().to_dict())
 
 # ----------------------------------------
 # 문제 6. 같은 행인데 스케일 값이 다르다
@@ -271,7 +274,49 @@ print(멘티.loc[c_mask, ["생산라인", "압력"]])
 #
 # [멘티에게 한 문장으로]
 #   "같은 A라인 기록인데 0.061이 아니라 0.536으로 찍힌 이유는 ..."
+멘토정규 = 작업본[["검사일시", "생산라인"] + 센서].copy()
+print("\n6번 문제")
 
+for col in 센서:
+    low = 작업본[col].min()
+    high = 작업본[col].max()
+
+    멘토정규[col] = ((작업본[col] - low) / (high - low)).round(4)
+
+멘티정규["키"] = (
+    멘티정규["검사일시"].astype(str) + "_" + 멘티정규["생산라인"].astype(str)
+)
+
+멘토정규["키"] = (
+    멘토정규["검사일시"].astype(str) + "_" + 멘토정규["생산라인"].astype(str)
+)
+
+비교 = 멘티정규.merge(
+    멘토정규[["키"] + 센서],
+    on="키",
+    how="inner",
+    suffixes=("_멘티", "_멘토"),
+)
+
+for col in 센서:
+    비교[f"{col}_차이"] = (비교[f"{col}_멘티"] - 비교[f"{col}_멘토"]).abs()
+    max_diff = 비교[f"{col}_차이"].max()
+    cnt = (비교[f"{col}_차이"] > 0.05).sum()
+
+top4 = 비교.nlargest(4, "온도_차이")
+
+line_compare = 비교.groupby("생산라인").agg(
+    멘티=("온도_멘티", "mean"),
+    멘토=("온도_멘토", "mean"),
+)
+
+print("(1) 맞춰진 행 수:", len(비교))
+print(f"센서별 두 값의 차이 최댓값: {max_diff}")
+print(f"센서별 차이가 0.05를 넘는 행 개수: {cnt}")
+print(top4[["키", "온도_멘티", "온도_멘토", "온도_차이"]])
+print(line_compare.round(4))
+
+# 결측 온도를 A라인 기준값이 아닌 전체 평균 약 84.4도로 채운뒤 정규화했기 때문이다.
 
 # ----------------------------------------
 # 문제 7. 스케일 기준은 학습에서만 잡는다
@@ -293,7 +338,109 @@ print(멘티.loc[c_mask, ["생산라인", "압력"]])
 #
 # [멘티에게 한 문장으로]
 #   "테스트 값이 1을 넘은 건 잘못된 게 아니라 ..."
+import random
 
+random.seed(6)
+shuffled_idx = np.random.permutation(len(작업본))
+
+print("\n7번 문제.")
+
+# 6 : 2 : 2 경계
+train_end = int(len(작업본) * 0.6)
+val_end = int(len(작업본) * 0.8)
+
+train = 작업본.iloc[shuffled_idx[:train_end]].reset_index(drop=True)
+valid = 작업본.iloc[shuffled_idx[train_end:val_end]].reset_index(drop=True)
+test = 작업본.iloc[shuffled_idx[val_end:]].reset_index(drop=True)
+
+print(train)
+print("학습:", len(train))
+print("검증:", len(valid))
+print("테스트:", len(test))
+
+# 1. 전체 기준 min / max
+전체기준 = pd.DataFrame(
+    {
+        "min": 작업본[센서].min(),
+        "max": 작업본[센서].max(),
+    }
+)
+
+# 2. 학습 데이터만의 min / max
+학습기준 = pd.DataFrame(
+    {
+        "min": train[센서].min(),
+        "max": train[센서].max(),
+    }
+)
+
+# 3. 나란히 비교 출력
+기준비교 = pd.DataFrame(
+    {
+        "전체_min": 전체기준["min"],
+        "전체_max": 전체기준["max"],
+        "학습_min": 학습기준["min"],
+        "학습_max": 학습기준["max"],
+    }
+)
+
+print(기준비교.round(2))
+
+# 학습 기준 저장
+학습기준.to_csv(
+    BASE / "스케일링기준.csv",
+    encoding="utf-8-sig",
+)
+
+
+def scale_data(df, standard):
+    result = df.copy()
+
+    for col in 센서:
+        low = standard.loc[col, "min"]
+        high = standard.loc[col, "max"]
+
+        # 모든 값이 같은 열일 때 0으로 처리
+        if low == high:
+            result[col] = 0.0
+        else:
+            result[col] = (result[col] - low) / (high - low)
+
+    return result
+
+
+# 5. 테스트 데이터를 전체 기준 / 학습 기준으로 각각 변환
+test_all_scaled = scale_data(test, 전체기준)
+test_train_scaled = scale_data(test, 학습기준)
+
+
+# (1) 0~1 밖으로 나간 칸 개수
+outside_all = ((test_all_scaled[센서] < 0) | (test_all_scaled[센서] > 1)).sum().sum()
+
+outside_train = (
+    ((test_train_scaled[센서] < 0) | (test_train_scaled[센서] > 1)).sum().sum()
+)
+
+print("\n[(1) 0~1 밖 칸 개수]")
+print("전체 기준:", outside_all)
+print("학습 기준:", outside_train)
+
+
+# (2) 정확히 0 또는 1인 칸 개수
+edge_all = ((test_all_scaled[센서] == 0) | (test_all_scaled[센서] == 1)).sum().sum()
+
+edge_train = (
+    ((test_train_scaled[센서] == 0) | (test_train_scaled[센서] == 1)).sum().sum()
+)
+
+print("\n[(2) 정확히 0 또는 1인 칸 개수]")
+print("전체 기준:", edge_all)
+print("학습 기준:", edge_train)
+
+
+# (3) 학습 기준으로 변환한 테스트 데이터의 센서별 최댓값
+print("\n[(3) 학습 기준 변환값의 열별 최댓값]")
+print(test_train_scaled[센서].max().round(3))
 
 # ----------------------------------------
 # 문제 8. 새 배치가 들어왔다
@@ -320,7 +467,113 @@ print(멘티.loc[c_mask, ["생산라인", "압력"]])
 #
 # [멘티에게 한 문장으로]
 #   "처음 보는 라인이 들어왔을 때 기존 기준을 그대로 쓰면 ..."
+print("\n8번 문제")
 
+# 1. 저장한 학습 min/max 기준 다시 읽기
+학습기준_복원 = pd.read_csv(
+    BASE / "스케일링기준.csv",
+    encoding="utf-8-sig",
+    index_col=0,
+)
+
+print("[복원한 학습 기준]")
+print(학습기준_복원)
+
+
+# 2. 배치2 읽기
+배치2 = pd.read_csv(
+    BASE / "설비배치2.csv",
+    encoding="utf-8-sig",
+)
+
+# 숫자 열 처리
+for col in 센서:
+    배치2[col] = pd.to_numeric(배치2[col], errors="coerce")
+
+
+# 3. 배치2 라인별 행 수
+print("\n[배치2 라인별 행 수]")
+print(배치2["생산라인"].value_counts().sort_index())
+
+
+# 4. 배치1에 없던 생산라인 확인
+배치1_라인 = set(작업본["생산라인"])
+
+new_line_mask = ~배치2["생산라인"].isin(배치1_라인)
+
+new_lines = sorted(배치2.loc[new_line_mask, "생산라인"].unique())
+
+print("\n[새 생산라인]")
+print("개수:", new_line_mask.sum())
+print("이름:", new_lines)
+
+
+# 5. 저장된 학습 기준으로 배치2 전체 변환
+배치2_정규 = scale_data(배치2, 학습기준_복원)
+
+print("\n[배치2 라인별 정규화 온도 최소 / 최대]")
+print(배치2_정규.groupby("생산라인")["온도"].agg(["min", "max"]).round(3))
+
+
+# 6. 라인코드 만들기
+line_code = {
+    "A라인": 0,
+    "B라인": 1,
+    "C라인": 2,
+}
+
+배치2_정규["라인코드"] = 배치2_정규["생산라인"].map(line_code)
+
+print("\n[라인코드가 없는 행 수]")
+print(배치2_정규["라인코드"].isna().sum())
+
+
+# 7. 배치1에 있던 라인만 남기기
+기존라인_배치2 = 배치2.loc[~new_line_mask].copy()
+
+# 같은 학습 기준으로 다시 정규화
+기존라인_정규 = scale_data(기존라인_배치2, 학습기준_복원)
+
+
+# 8. 기존 라인 배치2의 0~1 범위 밖 값 개수
+outside_count = ((기존라인_정규[센서] < 0) | (기존라인_정규[센서] > 1)).sum().sum()
+
+print("\n[기존 라인 배치2]")
+print("0~1 범위 밖 값 개수:", outside_count)
+
+print("\n[열별 최소 / 최대]")
+print(기존라인_정규[센서].agg(["min", "max"]).T.round(3))
+
+
+# 9. 같은 기준으로 한 번 더 변환했을 때 완전히 같은지 확인
+기존라인_정규_2 = scale_data(기존라인_배치2, 학습기준_복원)
+
+print("\n[같은 기준으로 다시 변환한 결과가 같은가]")
+print(기존라인_정규[센서].equals(기존라인_정규_2[센서]))
+
+
+# 10. 문제 5까지 정리한 배치1 결과 저장
+작업본.to_csv(
+    BASE / "정제결과_최종.csv",
+    encoding="utf-8-sig",
+    index=False,
+)
+
+# 다시 읽어서 검수
+최종 = pd.read_csv(
+    BASE / "정제결과_최종.csv",
+    encoding="utf-8-sig",
+)
+
+print("\n[최종 파일 검수]")
+print(
+    최종.shape,
+    최종.isna().sum().sum(),
+    최종["생산라인"].value_counts().sort_index().to_dict(),
+)
+
+# 처음 보는 라인이 들어왔을 때 기존 기준을 그대로 쓰면, 기존 라인의 범위와 비교되어 값이 과도하게 크거나 작게 정규화되고 라인코드도 붙지않아 모델이
+# 잘못된 판단을 할 수 있습니다.
 
 # ----------------------------------------
 # 마무리. 검수보고서.md 작성
