@@ -18,8 +18,8 @@ df = pd.read_csv(csv_path, encoding="utf-8-sig")
 
 # print("실습 데이터 준비 완료:", csv_path.name)
 # print(df.shape)
-miss = df.isnull().sum()  # isnull이 결측치같은거 True로 반환 sum으로 합산
-# print(miss[miss > 0].to_dict())  # 앞에를 키로 뒤에를 밸류
+miss = df.isnull().sum()  # isnull이 결측치(Null/Nan,None) True로 반환 sum으로 합산
+# print(miss[miss > 0].to_dict())  # 앞에 키, 뒤에 밸류
 # print(df["진동"].dtypes)
 # print(df["판정"].value_counts().to_dict())  # 특정 열의 값과 개수 가져오기(내림차순)
 
@@ -29,8 +29,9 @@ miss = df.isnull().sum()  # isnull이 결측치같은거 True로 반환 sum으�
 # 바꾼 뒤 진동 열의 결측 개수와 평균(소수 둘째 자리)을 출력하세요.
 
 df["진동"] = pd.to_numeric(df["진동"], errors="coerce")
-# print(df["진동"].isnull().sum())
-# print(round(df["진동"].mean(), 2))
+print(df["진동"].isnull().sum())
+print(round(df["진동"].mean(), 2))
+
 
 # 문제 3. 중복 행 제거
 # ----------------------------------------
@@ -39,7 +40,7 @@ df["진동"] = pd.to_numeric(df["진동"], errors="coerce")
 
 # print("\n중복 행 개수:", df.duplicated().sum())  # → 중복 행 개수: 1
 df = df.drop_duplicates()  # 결과는 다시 담기 (원본을 안 바꿈)
-# print("중복 제거 후 행 열:", df.shape)  # → 중복 제거 후 행 수: 14
+print("중복 제거 후 행 열:", df.shape)  # → 중복 제거 후 행 수: 14
 
 # 문제 4. 결측 채우기
 # ----------------------------------------
@@ -48,12 +49,11 @@ df = df.drop_duplicates()  # 결과는 다시 담기 (원본을 안 바꿈)
 # 채운 뒤 센서 4열의 남은 결측 총 개수를 출력하고,
 # 채우는 데 쓴 온도 평균과 압력 중앙값을 소수 둘째 자리로 한 줄에 출력하세요.
 
-
 df["온도"] = df["온도"].fillna(df["온도"].mean())
 df["압력"] = df["압력"].fillna(df["압력"].median())
 df["진동"] = df["진동"].fillna(df["진동"].mean())
-print(int(df["압력"].isnull().median()))
-print(round(df["온도"].mean(), 1), df["압력"].median())
+# print(int(df["압력"].isnull().median()))
+# print(round(df["온도"].mean(), 1), df["압력"].median())
 
 
 # 문제 5. 생산라인별 요약
@@ -61,18 +61,18 @@ print(round(df["온도"].mean(), 1), df["압력"].median())
 # 생산라인별 센서 4종 평균(소수 둘째 자리)을 표로 출력하고,
 # 라인별 검사 건수를 라인 이름 순으로 출력하세요.
 
-print(df.groupby("생산라인")[["온도", "진동", "회전수", "압력"]].mean().round(2))
-print(df["생산라인"].value_counts().sort_index().to_dict())
+# print(df.groupby("생산라인")[["온도", "진동", "회전수", "압력"]].mean().round(2))
+# print(df["생산라인"].value_counts().sort_index().to_dict())
 
 # 문제 6. z-점수로 온도 이상 찾기
 # ----------------------------------------
 # 온도 열 전체의 평균과 표준편차(ddof=0)를 소수 둘째 자리로 한 줄에 출력하세요.
 # 이어서 z-점수 절댓값이 3을 넘는 개수와 2를 넘는 개수를 한 줄에 출력하세요.
 
-print(df["온도"].mean().round(2), df["온도"].std(ddof=0).round(2))
+# print(df["온도"].mean().round(2), df["온도"].std(ddof=0).round(2))
 z = (df["온도"] - df["온도"].mean()) / df["온도"].std(ddof=0)
 
-print(int(z[np.abs(z) > 3].sum()), int(z[np.abs(z) > 2].sum()))
+# print(int(z[np.abs(z) > 3].sum()), int(z[np.abs(z) > 2].sum()))
 
 # 문제 7. IQR로 압력 이상 찾기
 # ----------------------------------------
@@ -117,13 +117,13 @@ c = round(df_normalized.mean(axis=0), 2)
 print(a.to_dict())
 print(b.to_dict())
 print(c.to_dict())
-# print(df.iloc[:, :2])
+print(df.iloc[:, :2])
 # .value_counts().to_dict()
 s = df.iloc[:, :2]
 
 y = np.concatenate([s, df_normalized], axis=1)
-# print(y)
-print(y.shape)
+print(y)
+# print(y.shape)
 
 # 기존 헤더에 열 추가
 
@@ -136,9 +136,7 @@ with open("정규화_멘티.csv", "w", encoding="utf-8-sig", newline="") as f:
     writer = csv.writer(f)
 
     # 헤더 한 줄 추가
-    writer.writerow(
-        ["검사일시", "생산라인", "설비번호", "온도", "진동", "회전수", "압력", "판정"]
-    )
+    writer.writerow(["검사일시", "생산라인", "온도", "진동", "회전수", "압력"])
 
     # y의 내용 저장
     writer.writerows(y)
@@ -151,19 +149,20 @@ with open("정규화_멘티.csv", "w", encoding="utf-8-sig", newline="") as f:
 # 생산라인을 숫자로 인코딩
 df["라인코드"] = df["생산라인"].replace({"A라인": 0, "B라인": 1, "C라인": 2})
 
+
 # 열 순서 지정
-columns = ["검사일시", "생산라인", "라인코드", "온도", "진동", "회전수", "압력", "판정"]
+# columns = ["검사일시", "생산라인", "라인코드", "온도", "진동", "회전수", "압력", "판정"]
 
-df = df[columns]
+# df = df[columns]
 
-# CSV 저장 (인덱스 없이, 한글 깨짐 방지)
-df.to_csv("정제결과_멘티.csv", index=False, encoding="utf-8-sig")
+# # CSV 저장 (인덱스 없이, 한글 깨짐 방지)
+# df.to_csv("정제결과_멘티.csv", index=False, encoding="utf-8-sig")
 
-# 저장한 파일 다시 읽기
-check_df = pd.read_csv("정제결과_멘티.csv", encoding="utf-8-sig")
+# # 저장한 파일 다시 읽기
+# check_df = pd.read_csv("정제결과_멘티.csv", encoding="utf-8-sig")
 
-# 표 크기, 결측 총 개수, 중복 개수 출력
-print(check_df.shape, check_df.isna().sum().sum(), check_df.duplicated().sum())
+# # 표 크기, 결측 총 개수, 중복 개수 출력
+# print(check_df.shape, check_df.isna().sum().sum(), check_df.duplicated().sum())
 
-# 열 이름 출력
-print(check_df.columns.tolist())
+# # 열 이름 출력
+# print(check_df.columns.tolist())
